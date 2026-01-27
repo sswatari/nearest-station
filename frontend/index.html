@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>最寄り駅検索アプリ</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map { height: 500px; width: 100%; }
+        #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>地図をクリックして最寄り駅を検索</h1>
+    <div id="map"></div>
+    <div id="result">ここに結果が表示されます</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 地図の初期設定（日本全体が見えるくらい）
+        const map = L.map('map').setView([35.6812, 139.7671], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        let marker;
+
+        // 地図をクリックした時の処理
+        map.on('click', async function(e) {
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([lat, lng]).addTo(map);
+
+            document.getElementById('result').innerText = "検索中...";
+
+            // あなたの Lambda 関数 URL をここに貼り付けてください
+            const lambdaUrl = "https://lmk2n4gjvur5ojmdugvwqboati0ycwvc.lambda-url.ap-northeast-1.on.aws/";
+
+            try {
+                const response = await fetch(`${lambdaUrl}?lat=${lat}&lng=${lng}`);
+                const data = await response.json();
+
+                if (data.response && data.response.station) {
+                    const stations = data.response.station.map(s => `${s.name}駅 (${s.line})`).join('<br>');
+                    document.getElementById('result').innerHTML = `<strong>最寄り駅:</strong><br>${stations}`;
+                } else {
+                    document.getElementById('result').innerText = "駅が見つかりませんでした。";
+                }
+            } catch (error) {
+                document.getElementById('result').innerText = "エラーが発生しました。CORS設定を確認してください。";
+            }
+        });
+    </script>
+</body>
+</html>
