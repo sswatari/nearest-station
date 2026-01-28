@@ -5,15 +5,16 @@
     <title>最寄り駅検索アプリ</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { font-family: sans-serif; }
-        h1 { text-align: center; font-size: 1.5em; }
+        body { font-family: sans-serif; margin: 0; padding: 0; }
+        h1 { text-align: center; font-size: 1.5em; margin: 15px 0; }
         #controls {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
             align-items: center;
             gap: 10px;
-            margin: 15px 0;
+            padding: 0 15px;
+            margin-bottom: 15px;
         }
         #address-input {
             width: 300px;
@@ -36,16 +37,40 @@
         #controls button:hover {
             background-color: #0056b3;
         }
-        #map { height: 500px; width: 100%; border: 1px solid #ccc; }
+
+        #main-container {
+            display: flex;
+            gap: 15px;
+            padding: 0 15px;
+        }
+
+        #map {
+            flex: 1; /* Take up 50% of the space */
+            height: 75vh; /* Make map taller */
+            border: 1px solid #ccc;
+        }
         #result {
-            margin-top: 20px;
-            padding: 15px;
+            flex: 1; /* Take up 50% of the space */
             border: 1px solid #ccc;
             background-color: #f9f9f9;
-            text-align: center;
             font-size: 1.1em;
-            min-height: 50px;
-            overflow-x: auto;
+            overflow-y: auto; /* Add scroll for results */
+            height: 75vh;
+            padding: 15px;
+        }
+
+        /* Responsive layout for mobile */
+        @media (max-width: 768px) {
+            #main-container {
+                flex-direction: column;
+            }
+            #map {
+                height: 400px; /* Fixed height for map on mobile */
+            }
+            #result {
+                height: auto; /* Auto height for results on mobile */
+                margin-top: 15px;
+            }
         }
 
         /* Spinner Styles */
@@ -84,6 +109,7 @@
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
+            font-size: 0.9em;
         }
         #result th {
             background-color: #f2f2f2;
@@ -119,8 +145,11 @@
             <option value="10">10</option>
         </select>
     </div>
-    <div id="map"></div>
-    <div id="result">地図をクリックするか、住所・現在地で検索してください</div>
+    
+    <div id="main-container">
+        <div id="map"></div>
+        <div id="result">地図をクリックするか、住所・現在地で検索してください</div>
+    </div>
 
     <!-- Spinner Overlay HTML -->
     <div id="spinner-overlay">
@@ -316,7 +345,7 @@
 
                 stationsToDisplay.forEach((s, index) => {
                     const rank = index + 1;
-                    if(s.lat && s.lon) { // BUG FIX: Use s.lon instead of s.lng
+                    if(s.lat && s.lon) { // Use s.lon here
                         const numberIcon = L.divIcon({
                             className: 'leaflet-div-icon',
                             html: `<span>${rank}</span>`,
