@@ -13,12 +13,13 @@
             font-family: sans-serif;
             display: flex;
             flex-direction: column;
+            overflow: hidden; /* Prevent body scroll */
         }
         h1 {
             text-align: center;
             font-size: 1.2em;
             margin: 10px 0;
-            flex-shrink: 0; /* Prevent h1 from shrinking */
+            flex-shrink: 0;
         }
         #controls {
             display: flex;
@@ -30,7 +31,7 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             z-index: 10;
             background: #fff;
-            flex-shrink: 0; /* Prevent controls from shrinking */
+            flex-shrink: 0;
         }
         #address-input {
             width: 250px;
@@ -55,8 +56,8 @@
         }
 
         #map-container {
-            flex-grow: 1; /* Take up remaining vertical space */
-            position: relative; /* Anchor for absolute children */
+            flex-grow: 1;
+            position: relative;
         }
 
         #map {
@@ -66,26 +67,41 @@
 
         #result {
             position: absolute;
-            bottom: 20px;
+            top: 20px;
             right: 20px;
             z-index: 1000;
             background-color: rgba(255, 255, 255, 0.9);
             border: 1px solid #ccc;
             border-radius: 5px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            max-height: 40vh; /* Max height to prevent taking over screen */
-            max-width: 450px;
-            overflow: auto;
-            display: none; /* Initially hidden */
+            width: 450px;
+            overflow: hidden; /* Hide scrollbar from container */
+            display: none;
+        }
+        #result-header {
+            padding: 8px;
+            cursor: move;
+            background-color: #f1f1f1;
+            border-bottom: 1px solid #ccc;
+            font-size: 0.9em;
+            font-weight: bold;
+            text-align: center;
+        }
+        #result-table-container {
+            overflow-y: auto; /* Allow this part to scroll */
         }
 
         /* Responsive layout for mobile */
         @media (max-width: 768px) {
             #result {
+                top: auto;
                 bottom: 10px;
                 right: 10px;
                 left: 10px;
-                max-width: none;
+                width: auto;
+            }
+            #result-table-container {
+                max-height: 200px; /* Show ~5 rows and scroll */
             }
         }
 
@@ -97,7 +113,7 @@
             width: 100%;
             height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
-            z-index: 10000;
+            z-index: 10001; /* Higher than result panel */
             display: none;
             justify-content: center;
             align-items: center;
@@ -121,7 +137,7 @@
             border-collapse: collapse;
         }
         #result th, #result td {
-            border: 1px solid #ddd;
+            border-bottom: 1px solid #ddd;
             padding: 6px;
             text-align: left;
             font-size: 0.85em;
@@ -160,10 +176,13 @@
             <option value="10">10</option>
         </select>
     </div>
-    
+
     <div id="map-container">
         <div id="map"></div>
-        <div id="result"></div>
+        <div id="result">
+             <div id="result-header">最寄り駅一覧</div>
+             <div id="result-table-container"></div>
+        </div>
     </div>
 
     <div id="spinner-overlay">
@@ -178,15 +197,13 @@
         let stationMarkers = [];
         const lambdaUrl = "https://lmk2n4gjvur5ojmdugvwqboati0ycwvc.lambda-url.ap-northeast-1.on.aws/";
 
-        const addressInput = document.getElementById('address-input');
-        const latInput = document.getElementById('lat-input');
-        const lngInput = document.getElementById('lng-input');
         const resultDiv = document.getElementById('result');
+        const resultTableContainer = document.getElementById('result-table-container');
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
-        
+
         const spinnerOverlay = document.getElementById('spinner-overlay');
         function showSpinner() { spinnerOverlay.style.display = 'flex'; }
         function hideSpinner() { spinnerOverlay.style.display = 'none'; }
@@ -194,35 +211,24 @@
         map.on('click', (e) => updateSearchLocation(e.latlng.lat, e.latlng.lng));
         document.getElementById('current-location-btn').addEventListener('click', useCurrentLocation);
         document.getElementById('search-btn').addEventListener('click', executeSearch);
-        
-        // Invalidate map size on window resize to fix rendering issues
-        window.addEventListener('resize', () => {
-            setTimeout(() => { map.invalidateSize() }, 100);
-        });
 
-        async function reverseGeocode(lat, lng) {
-            try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
-                     headers: { 'User-Agent': 'NearestStationApp/1.0' }
-                });
-                const data = await response.json();
-                addressInput.value = (data && data.display_name) ? data.display_name : `緯度: ${lat.toFixed(6)}, 経度: ${lng.toFixed(6)}`;
-            } catch(error) {
-                console.error("Reverse Geocode Error:", error);
-                addressInput.value = `緯度: ${lat.toFixed(6)}, 経度: ${lng.toFixed(6)}`;
-            }
-        }
-        
+        window.addEventListener('resize', () => { setTimeout(() => { map.invalidateSize() }, 100); });
+
+        // Make the result panel draggable
+        dragElement(resultDiv);
+
+        // --- 機能関数 ---
+
         async function updateSearchLocation(lat, lng) {
             showSpinner();
             if (searchMarker) map.removeLayer(searchMarker);
             searchMarker = L.marker([lat, lng]).addTo(map);
             map.setView([lat, lng], 15);
-            
-            latInput.value = lat;
-            lngInput.value = lng;
-            
-            addressInput.value = "住所を検索中...";
+
+            document.getElementById('lat-input').value = lat;
+            document.getElementById('lng-input').value = lng;
+
+            document.getElementById('address-input').value = "住所を検索中...";
             resultDiv.style.display = 'none'; // Hide old results
             await reverseGeocode(lat, lng);
             hideSpinner();
@@ -242,12 +248,12 @@
                 alert("お使いのブラウザは位置情報機能に対応していません。");
             }
         }
-        
+
         async function executeSearch() {
-            let lat = latInput.value;
-            let lng = lngInput.value;
-            const address = addressInput.value;
-            
+            let lat = document.getElementById('lat-input').value;
+            let lng = document.getElementById('lng-input').value;
+            const address = document.getElementById('address-input').value;
+
             showSpinner();
             resultDiv.style.display = 'none';
 
@@ -260,8 +266,8 @@
                     if (data && data.length > 0) {
                         lat = parseFloat(data[0].lat);
                         lng = parseFloat(data[0].lon);
-                        latInput.value = lat;
-                        lngInput.value = lng;
+                        document.getElementById('lat-input').value = lat;
+                        document.getElementById('lng-input').value = lng;
                         if (searchMarker) map.removeLayer(searchMarker);
                         searchMarker = L.marker([lat, lng]).addTo(map);
                         map.setView([lat, lng], 15);
@@ -281,7 +287,7 @@
                  hideSpinner();
                  return;
             }
-            
+
             await searchFromCoordinates(lat, lng);
         }
 
@@ -297,14 +303,14 @@
                 displayResults(data);
             } catch (error) {
                 console.error("Fetch Error:", error);
-                alert("最寄り駅の検索中にエラーが発生しました。サーバー側のログを確認してください。");
+                alert("最寄り駅の検索中にエラーが発生しました。");
             } finally {
                 hideSpinner();
             }
         }
-        
+
         function displayResults(data) {
-            resultDiv.innerHTML = ''; 
+            resultTableContainer.innerHTML = '';
 
             if (data.error || !data.response || !data.response.station || data.response.station.length === 0) {
                 resultDiv.style.display = 'none';
@@ -313,12 +319,11 @@
             }
 
             const stationsToDisplay = data.response.station;
-
             const table = document.createElement('table');
             const thead = table.createTHead();
             const tbody = table.createTBody();
             const headerRow = thead.insertRow();
-            const headers = ['#', '駅名', '路線', '距離(km)'];
+            const headers = ['順', '駅名', '路線', '距離(km)'];
             headers.forEach(text => {
                 const th = document.createElement('th');
                 th.textContent = text;
@@ -333,23 +338,74 @@
                         html: `<span>${rank}</span>`,
                         iconSize: [28, 28]
                     });
-                    const stationMarker = L.marker([s.lat, s.lon], { icon: numberIcon })
+                    L.marker([s.lat, s.lon], { icon: numberIcon })
                         .addTo(map)
                         .bindPopup(`<b>${rank}. ${s.name}駅</b><br>${s.line || ''}`);
-                    stationMarkers.push(stationMarker);
                 }
-                
                 const row = tbody.insertRow();
-                const distanceInKm = (parseFloat(s.distance) / 1000).toFixed(2);
-                
                 row.insertCell().textContent = rank;
                 row.insertCell().textContent = s.name;
                 row.insertCell().textContent = s.line || '---';
-                row.insertCell().textContent = distanceInKm;
+                row.insertCell().textContent = (parseFloat(s.distance) / 1000).toFixed(2);
             });
-            
-            resultDiv.appendChild(table);
+
+            resultTableContainer.appendChild(table);
             resultDiv.style.display = 'block';
+        }
+
+        async function reverseGeocode(lat, lng) {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+                     headers: { 'User-Agent': 'NearestStationApp/1.0' }
+                });
+                const data = await response.json();
+                document.getElementById('address-input').value = (data && data.display_name) ? data.display_name : `緯度: ${lat.toFixed(6)}, 経度: ${lng.toFixed(6)}`;
+            } catch(error) {
+                console.error("Reverse Geocode Error:", error);
+            }
+        }
+
+        function dragElement(elmnt) {
+            var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            const header = document.getElementById(elmnt.id + "-header");
+
+            if (header) {
+                // if present, the header is where you move the DIV from:
+                header.onmousedown = dragMouseDown;
+            } else {
+                // otherwise, move the DIV from anywhere inside the DIV:
+                elmnt.onmousedown = dragMouseDown;
+            }
+
+            function dragMouseDown(e) {
+                e = e || window.event;
+                e.preventDefault();
+                // get the mouse cursor position at startup:
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                // call a function whenever the cursor moves:
+                document.onmousemove = elementDrag;
+            }
+
+            function elementDrag(e) {
+                e = e || window.event;
+                e.preventDefault();
+                // calculate the new cursor position:
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                // set the element's new position:
+                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+            }
+
+            function closeDragElement() {
+                // stop moving when mouse button is released:
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
         }
     </script>
 </body>
