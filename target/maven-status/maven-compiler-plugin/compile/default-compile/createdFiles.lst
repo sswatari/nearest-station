@@ -1,1 +1,4 @@
 com/example/NearestStationHandler.class
+com/example/NearestStationHandler$StationDataService.class
+com/example/CsvLoader.class
+com/example/NearestStationHandler$Station.class

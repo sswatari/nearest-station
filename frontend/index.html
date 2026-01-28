@@ -5,50 +5,345 @@
     <title>最寄り駅検索アプリ</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        #map { height: 500px; width: 100%; }
-        #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+        body { font-family: sans-serif; }
+        h1 { text-align: center; font-size: 1.5em; }
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        #address-input {
+            width: 300px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #controls button, #controls select {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: white;
+        }
+        #controls button {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+            cursor: pointer;
+        }
+        #controls button:hover {
+            background-color: #0056b3;
+        }
+        #map { height: 500px; width: 100%; border: 1px solid #ccc; }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+            text-align: center;
+            font-size: 1.1em;
+            min-height: 50px;
+            overflow-x: auto;
+        }
+
+        /* Spinner Styles */
+        #spinner-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            display: none; /* Initially hidden */
+            justify-content: center;
+            align-items: center;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Table and Icon Styles */
+        #result table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        #result th, #result td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        #result th {
+            background-color: #f2f2f2;
+            text-align: center;
+        }
+        #result tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .leaflet-div-icon {
+            background: #3498db;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            font-weight: bold;
+            line-height: 30px;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
-    <h1>地図をクリックして最寄り駅を検索</h1>
+    <h1>最寄り駅検索</h1>
+    <div id="controls">
+        <input type="text" id="address-input" placeholder="住所や地名を入力、または地図をクリック...">
+        <input type="hidden" id="lat-input">
+        <input type="hidden" id="lng-input">
+        <button id="current-location-btn">現在地を利用</button>
+        <button id="search-btn">検索</button>
+        <label for="limit-select">表示件数:</label>
+        <select id="limit-select">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+        </select>
+    </div>
     <div id="map"></div>
-    <div id="result">ここに結果が表示されます</div>
+    <div id="result">地図をクリックするか、住所・現在地で検索してください</div>
+
+    <!-- Spinner Overlay HTML -->
+    <div id="spinner-overlay">
+        <div class="spinner"></div>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // 地図の初期設定（日本全体が見えるくらい）
+        // --- 初期設定 ---
         const map = L.map('map').setView([35.6812, 139.7671], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        let searchMarker;
+        let stationMarkers = [];
+        const lambdaUrl = "https://lmk2n4gjvur5ojmdugvwqboati0ycwvc.lambda-url.ap-northeast-1.on.aws/";
 
-        let marker;
+        const addressInput = document.getElementById('address-input');
+        const latInput = document.getElementById('lat-input');
+        const lngInput = document.getElementById('lng-input');
+        const resultDiv = document.getElementById('result');
 
-        // 地図をクリックした時の処理
-        map.on('click', async function(e) {
-            const lat = e.latlng.lat;
-            const lng = e.latlng.lng;
+        // --- 地図のデザイン ---
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        // --- スピナー制御 ---
+        const spinnerOverlay = document.getElementById('spinner-overlay');
+        function showSpinner() {
+            spinnerOverlay.style.display = 'flex';
+        }
+        function hideSpinner() {
+            spinnerOverlay.style.display = 'none';
+        }
 
-            if (marker) map.removeLayer(marker);
-            marker = L.marker([lat, lng]).addTo(map);
+        // --- イベントリスナー ---
+        map.on('click', (e) => updateSearchLocation(e.latlng.lat, e.latlng.lng));
+        document.getElementById('current-location-btn').addEventListener('click', useCurrentLocation);
+        document.getElementById('search-btn').addEventListener('click', executeSearch);
 
-            document.getElementById('result').innerText = "検索中...";
+        // --- 機能関数 ---
 
-            // あなたの Lambda 関数 URL をここに貼り付けてください
-            const lambdaUrl = "https://lmk2n4gjvur5ojmdugvwqboati0ycwvc.lambda-url.ap-northeast-1.on.aws/";
+        /**
+         * 緯度経度から住所を検索（リバースジオコーディング）して入力欄に表示
+         */
+        async function reverseGeocode(lat, lng) {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+                     headers: { 'User-Agent': 'NearestStationApp/1.0' }
+                });
+                const data = await response.json();
+                if (data && data.display_name) {
+                    addressInput.value = data.display_name;
+                } else {
+                    addressInput.value = `緯度: ${lat.toFixed(6)}, 経度: ${lng.toFixed(6)}`;
+                }
+            } catch(error) {
+                console.error("Reverse Geocode Error:", error);
+                addressInput.value = `緯度: ${lat.toFixed(6)}, 経度: ${lng.toFixed(6)}`;
+            }
+        }
+        
+        /**
+         * 指定された緯度経度で地図上の検索場所を更新
+         */
+        async function updateSearchLocation(lat, lng) {
+            showSpinner();
+            if (searchMarker) map.removeLayer(searchMarker);
+            searchMarker = L.marker([lat, lng]).addTo(map);
+            map.setView([lat, lng], 15);
+            
+            latInput.value = lat;
+            lngInput.value = lng;
+            
+            addressInput.value = "住所を検索中...";
+            resultDiv.innerText = "場所を指定しました。「検索」ボタンを押してください。";
+            await reverseGeocode(lat, lng);
+            hideSpinner();
+        }
+
+        /**
+         * 現在地を取得して検索場所を更新
+         */
+        function useCurrentLocation() {
+            if ('geolocation' in navigator) {
+                showSpinner();
+                resultDiv.innerText = "現在地を取得中...";
+                navigator.geolocation.getCurrentPosition(async position => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    await updateSearchLocation(lat, lon);
+                    // The spinner is hidden inside updateSearchLocation
+                }, error => {
+                    console.error("Geolocation Error:", error);
+                    resultDiv.innerText = "現在地を取得できませんでした。ブラウザの許可設定などを確認してください。";
+                    hideSpinner();
+                });
+            } else {
+                alert("お使いのブラウザは位置情報機能に対応していません。");
+            }
+        }
+        
+        /**
+         * 統一された検索実行関数
+         */
+        async function executeSearch() {
+            let lat = latInput.value;
+            let lng = lngInput.value;
+            const address = addressInput.value;
+            
+            showSpinner();
+
+            if ((!lat || !lng) && address) {
+                resultDiv.innerText = "住所を検索中...";
+                 try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`, {
+                        headers: { 'User-Agent': 'NearestStationApp/1.0' }
+                    });
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                        lat = parseFloat(data[0].lat);
+                        lng = parseFloat(data[0].lon);
+                        latInput.value = lat;
+                        lngInput.value = lng;
+                        if (searchMarker) map.removeLayer(searchMarker);
+                        searchMarker = L.marker([lat, lng]).addTo(map);
+                        map.setView([lat, lng], 15);
+                    } else {
+                        resultDiv.innerText = "住所が見つかりませんでした。";
+                        hideSpinner();
+                        return;
+                    }
+                } catch(error) {
+                    console.error("Address Search Error:", error);
+                    resultDiv.innerText = "住所の検索中にエラーが発生しました。";
+                    hideSpinner();
+                    return;
+                }
+            } else if (!lat || !lng) {
+                 alert("住所を入力するか、地図をクリックしてください。");
+                 hideSpinner();
+                 return;
+            }
+            
+            await searchFromCoordinates(lat, lng);
+        }
+
+        /**
+         * 緯度経度から最寄り駅を検索し、結果を表示する中心的な関数
+         */
+        async function searchFromCoordinates(lat, lng) {
+            stationMarkers.forEach(m => map.removeLayer(m));
+            stationMarkers = [];
+
+            resultDiv.innerText = "最寄り駅を検索中...";
 
             try {
-                const response = await fetch(`${lambdaUrl}?lat=${lat}&lng=${lng}`);
+                const limit = document.getElementById('limit-select').value;
+                const url = `${lambdaUrl}?lat=${lat}&lng=${lng}&limit=${limit}`;
+                const response = await fetch(url);
                 const data = await response.json();
-
-                if (data.response && data.response.station) {
-                    const stations = data.response.station.map(s => `${s.name}駅 (${s.line})`).join('<br>');
-                    document.getElementById('result').innerHTML = `<strong>最寄り駅:</strong><br>${stations}`;
-                } else {
-                    document.getElementById('result').innerText = "駅が見つかりませんでした。";
-                }
+                displayResults(data);
             } catch (error) {
-                document.getElementById('result').innerText = "エラーが発生しました。CORS設定を確認してください。";
+                console.error("Fetch Error:", error);
+                resultDiv.innerText = "エラーが発生しました。サーバー側のログを確認してください。";
+            } finally {
+                hideSpinner();
             }
-        });
+        }
+        
+        /**
+         * Lambdaからのレスポンスを整形して画面と地図上に表示
+         */
+        function displayResults(data) {
+            resultDiv.innerHTML = ''; 
+
+            if (data.error) {
+                resultDiv.innerText = "エラー: " + data.error;
+                return;
+            }
+
+            if (data.response && data.response.station && data.response.station.length > 0) {
+                const stationsToDisplay = data.response.station;
+
+                const table = document.createElement('table');
+                const thead = table.createTHead();
+                const tbody = table.createTBody();
+                const headerRow = thead.insertRow();
+                const headers = ['順位', '駅名', '路線', '距離'];
+                headers.forEach(text => {
+                    const th = document.createElement('th');
+                    th.textContent = text;
+                    headerRow.appendChild(th);
+                });
+
+                stationsToDisplay.forEach((s, index) => {
+                    const rank = index + 1;
+                    if(s.lat && s.lon) { // BUG FIX: Use s.lon instead of s.lng
+                        const numberIcon = L.divIcon({
+                            className: 'leaflet-div-icon',
+                            html: `<span>${rank}</span>`,
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 30]
+                        });
+                        const stationMarker = L.marker([s.lat, s.lon], { icon: numberIcon })
+                            .addTo(map)
+                            .bindPopup(`<b>${rank}. ${s.name}駅</b><br>${s.line || ''}`);
+                        stationMarkers.push(stationMarker);
+                    }
+                    
+                    const row = tbody.insertRow();
+                    const distanceInKm = (parseFloat(s.distance) / 1000).toFixed(2);
+                    
+                    row.insertCell().textContent = rank;
+                    row.insertCell().textContent = s.name;
+                    row.insertCell().textContent = s.line || '---';
+                    row.insertCell().textContent = `約 ${distanceInKm} km`;
+                });
+                
+                resultDiv.appendChild(table);
+
+            } else {
+                resultDiv.innerText = "駅が見つかりませんでした。";
+            }
+        }
     </script>
 </body>
 </html>
