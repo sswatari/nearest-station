@@ -1,0 +1,6 @@
+frontend/config.js
+data/
+src/
+target/
+dependency-reduced-pom.xml
+pom.xml
