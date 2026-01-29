@@ -49,34 +49,42 @@
             border: 1px solid #ccc;
             border-radius: 4px;
             background-color: white;
+            color: #333; /* Default text color for non-styled buttons */
             cursor: pointer;
             white-space: nowrap; /* Prevent button text from wrapping */
         }
-        #current-location-btn {
-            border-radius: 0 4px 4px 0;
-        }
-        #search-btn {
+
+        /* --- Button Specific Styles --- */
+
+        /* Search Button (Blue) */
+        button#search-btn {
             background-color: #007bff;
             color: white;
             border-color: #007bff;
+            margin-left: auto; /* Push to the far right */
         }
-        #search-btn:hover {
+        button#search-btn:hover {
             background-color: #0056b3;
         }
-        .btn-secondary {
+
+        /* Current Location Button (Gray) */
+        button#current-location-btn {
+            border-radius: 0 4px 4px 0;
             background-color: #6c757d;
             color: white;
             border-color: #6c757d;
         }
-        .btn-secondary:hover {
+        button#current-location-btn:hover {
             background-color: #5a6268;
         }
-        .btn-danger {
+
+        /* Reset Button (Red) */
+        button#reset-btn {
             background-color: #dc3545;
             color: white;
             border-color: #dc3545;
         }
-        .btn-danger:hover {
+        button#reset-btn:hover {
             background-color: #c82333;
         }
 
@@ -193,7 +201,7 @@
     <div id="controls">
         <div id="address-container">
             <input type="text" id="address-input" placeholder="住所や地名を入力、または地図をクリック...">
-            <button id="current-location-btn" class="btn-secondary">現在地</button>
+            <button id="current-location-btn">現在地</button>
         </div>
         <input type="hidden" id="lat-input">
         <input type="hidden" id="lng-input">
@@ -203,7 +211,7 @@
             <option value="5" selected>5</option>
             <option value="10">10</option>
         </select>
-        <button id="reset-btn" class="btn-danger">リセット</button>
+        <button id="reset-btn">リセット</button>
         <button id="search-btn">検索</button>
     </div>
 
