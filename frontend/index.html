@@ -316,12 +316,14 @@
             const address = document.getElementById('address-input').value;
 
             showSpinner();
-            // Clear previous results immediately for better UX
-            clearMarkers();
+            
+            // 1. Clear previous *results* only (station markers and table)
+            stationMarkers.forEach(m => map.removeLayer(m));
+            stationMarkers = [];
             resultTableContainer.innerHTML = '';
             resultDiv.style.display = 'none';
 
-            // Geocode if address is provided but lat/lng are missing
+            // 2. Geocode if address is provided but lat/lng are missing
             if ((!lat || !lng) && address) {
                  try {
                     const response = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`, {
@@ -333,9 +335,6 @@
                         lng = parseFloat(data[0].lon);
                         document.getElementById('lat-input').value = lat;
                         document.getElementById('lng-input').value = lng;
-                        // Add a new search marker
-                        searchMarker = L.marker([lat, lng]).addTo(map);
-                        map.setView([lat, lng], 15);
                     } else {
                         alert("住所が見つかりませんでした。");
                         hideSpinner();
@@ -347,12 +346,22 @@
                     hideSpinner();
                     return;
                 }
-            } else if (!lat || !lng) {
+            }
+            
+            if (!lat || !lng) {
                  alert("住所を入力するか、地図をクリックしてください。");
                  hideSpinner();
                  return;
             }
 
+            // 3. Now that we have the definitive lat/lng, manage the searchMarker
+            if (searchMarker) {
+                map.removeLayer(searchMarker);
+            }
+            searchMarker = L.marker([lat, lng]).addTo(map);
+            map.setView([lat, lng], 15);
+
+            // 4. Fetch results
             await searchFromCoordinates(lat, lng);
         }
 
