@@ -234,7 +234,6 @@
         let searchMarker;
         let stationMarkers = [];
         const lambdaUrl = "https://lmk2n4gjvur5ojmdugvwqboati0ycwvc.lambda-url.ap-northeast-1.on.aws/";
-
         const resultDiv = document.getElementById('result');
         const resultTableContainer = document.getElementById('result-table-container');
 
@@ -277,9 +276,27 @@
             map.setView([35.6812, 139.7671], 13);
         }
 
+        // async function updateSearchLocation(lat, lng) {
+        //     showSpinner();
+        //     clearMarkers(); // Clear previous markers
+        //     searchMarker = L.marker([lat, lng]).addTo(map);
+        //     map.setView([lat, lng], 15);
+
+        //     document.getElementById('lat-input').value = lat;
+        //     document.getElementById('lng-input').value = lng;
+        //     document.getElementById('address-input').value = "住所を検索中...";
+        //     resultDiv.style.display = 'none';
+
+        //     try {
+        //         await reverseGeocode(lat, lng);
+        //     } finally {
+        //         hideSpinner();
+        //     }
+        // }
         async function updateSearchLocation(lat, lng) {
+            // スピナーを表示するが、住所検索を待たずにUIは更新する
             showSpinner();
-            clearMarkers(); // Clear previous markers
+            clearMarkers();
             searchMarker = L.marker([lat, lng]).addTo(map);
             map.setView([lat, lng], 15);
 
@@ -288,35 +305,58 @@
             document.getElementById('address-input').value = "住所を検索中...";
             resultDiv.style.display = 'none';
 
-            try {
-                await reverseGeocode(lat, lng);
-            } finally {
+            // ここで await しないことで、住所検索中も操作可能にする
+            reverseGeocode(lat, lng).finally(() => {
                 hideSpinner();
-            }
+            });
         }
 
+        // function useCurrentLocation() {
+        //     if ('geolocation' in navigator) {
+        //         showSpinner();
+        //         navigator.geolocation.getCurrentPosition(async position => {
+        //             await updateSearchLocation(position.coords.latitude, position.coords.longitude);
+        //         }, error => {
+        //             console.error("Geolocation Error:", error);
+        //             alert("現在地を取得できませんでした。");
+        //             hideSpinner();
+        //         });
+        //     } else {
+        //         alert("お使いのブラウザは位置情報機能に対応していません。");
+        //     }
+        // }
         function useCurrentLocation() {
             if ('geolocation' in navigator) {
                 showSpinner();
+                // タイムアウト設定などを追加
+                const options = {
+                    enableHighAccuracy: true, // GPS等を使用して精度を上げる
+                    timeout: 8000,           // 8秒以内に取得できなければエラーへ
+                    maximumAge: 30000        // 30秒以内のキャッシュがあればそれを使う
+                };
+
                 navigator.geolocation.getCurrentPosition(async position => {
                     await updateSearchLocation(position.coords.latitude, position.coords.longitude);
                 }, error => {
                     console.error("Geolocation Error:", error);
-                    alert("現在地を取得できませんでした。");
+                    let message = "現在地を取得できませんでした。";
+                    if (error.code === error.TIMEOUT) {
+                        message = "位置情報の取得に時間がかかりすぎたためタイムアウトしました。電波の良い場所で再度お試しください。";
+                    }
+                    alert(message);
                     hideSpinner();
-                });
+                }, options);
             } else {
                 alert("お使いのブラウザは位置情報機能に対応していません。");
             }
         }
-
         async function executeSearch() {
             let lat = document.getElementById('lat-input').value;
             let lng = document.getElementById('lng-input').value;
             const address = document.getElementById('address-input').value;
 
             showSpinner();
-            
+
             // 1. Clear previous *results* only (station markers and table)
             stationMarkers.forEach(m => map.removeLayer(m));
             stationMarkers = [];
@@ -347,7 +387,7 @@
                     return;
                 }
             }
-            
+
             if (!lat || !lng) {
                  alert("住所を入力するか、地図をクリックしてください。");
                  hideSpinner();
